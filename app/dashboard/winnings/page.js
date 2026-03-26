@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabaseClient'
-import { getUserProfile } from '@/lib/supabaseClient'
 import { formatCurrency, formatDate, getMatchLabel, statusColor } from '@/lib/utils'
 
 export default function WinningsPage() {
@@ -14,11 +13,12 @@ export default function WinningsPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    let mounted = true
     const init = async () => {
-      const { data: { user: u } } = await supabase.auth.getUser()
-      if (!u) { router.push('/login'); return }
-      const prof = await getUserProfile(u.id)
-      if (!prof) { router.push('/login'); return }
+      const { data: { user: u }, error: userError } = await supabase.auth.getUser()
+      if (!mounted) return
+      if (userError || !u) { router.push('/login'); return }
+
       setUser(u)
 
       const [{ data: wins }, { data: publishedDraws }] = await Promise.all([
@@ -26,15 +26,21 @@ export default function WinningsPage() {
           .select('*, draws(month, draw_numbers, total_prize_pool)')
           .eq('user_id', u.id)
           .order('created_at', { ascending: false }),
-        supabase.from('draws').select('*').eq('is_published', true).order('created_at', { ascending: false }).limit(6),
+        supabase.from('draws')
+          .select('*')
+          .eq('is_published', true)
+          .order('created_at', { ascending: false })
+          .limit(6),
       ])
 
+      if (!mounted) return
       setWinnings(wins ?? [])
       setDraws(publishedDraws ?? [])
       setLoading(false)
     }
     init()
-  }, [])
+    return () => { mounted = false }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
@@ -52,7 +58,6 @@ export default function WinningsPage() {
         <h1 className="font-display text-3xl font-bold mb-2">Winnings</h1>
         <p className="text-white/40 text-sm mb-8">Your draw results and prize history.</p>
 
-        {/* Summary */}
         <div className="grid grid-cols-3 gap-4 mb-8 stagger">
           <div className="card">
             <p className="text-xs text-white/40 mb-2">Total won</p>
@@ -69,7 +74,6 @@ export default function WinningsPage() {
         </div>
 
         <div className="grid md:grid-cols-2 gap-6">
-          {/* Winning records */}
           <div className="card">
             <h2 className="font-display font-bold text-lg mb-5">Prize history</h2>
             {winnings.length === 0 ? (
@@ -80,8 +84,7 @@ export default function WinningsPage() {
             ) : (
               <div className="space-y-3">
                 {winnings.map(w => (
-                  <div key={w.id}
-                    className="p-4 rounded-xl bg-white/5 border border-white/5">
+                  <div key={w.id} className="p-4 rounded-xl bg-white/5 border border-white/5">
                     <div className="flex items-start justify-between mb-2">
                       <div>
                         <p className="font-semibold text-sm">{getMatchLabel(w.match_type)}</p>
@@ -103,7 +106,6 @@ export default function WinningsPage() {
             )}
           </div>
 
-          {/* Recent draws */}
           <div className="card">
             <h2 className="font-display font-bold text-lg mb-5">Recent draws</h2>
             {draws.length === 0 ? (

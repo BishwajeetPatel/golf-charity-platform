@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabaseClient'
-import { getUserProfile } from '@/lib/supabaseClient'
 import { validateScore, deleteScore } from '@/lib/scoreLogic'
 import { formatDate } from '@/lib/utils'
 
@@ -26,18 +25,28 @@ export default function ScoresPage() {
   }
 
   useEffect(() => {
+    let mounted = true
     const init = async () => {
-      const { data: { user: u } } = await supabase.auth.getUser()
-      if (!u) { router.push('/login'); return }
-      const prof = await getUserProfile(u.id)
-      if (!prof) { router.push('/login'); return }
+      const { data: { user: u }, error: userError } = await supabase.auth.getUser()
+      if (!mounted) return
+      if (userError || !u) { router.push('/login'); return }
+
+      // Fetch profile — but don't redirect if it's briefly null
+      const { data: prof } = await supabase
+        .from('users')
+        .select('*, charities(*)')
+        .eq('id', u.id)
+        .single()
+
+      if (!mounted) return
       setUser(u)
-      setProfile(prof)
+      setProfile(prof ?? null)
       await loadScores(u.id)
       setLoading(false)
     }
     init()
-  }, [])
+    return () => { mounted = false }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAdd = async (e) => {
     e.preventDefault()
@@ -91,7 +100,6 @@ export default function ScoresPage() {
           Enter your Stableford scores (1–45). Only your last 5 scores are kept — they become your draw entries.
         </p>
 
-        {/* Add score form */}
         <div className="card mb-8">
           <h2 className="font-display font-bold text-lg mb-5">Add a score</h2>
 
@@ -133,7 +141,6 @@ export default function ScoresPage() {
           )}
         </div>
 
-        {/* Score list */}
         <div className="card">
           <h2 className="font-display font-bold text-lg mb-5">
             Your scores <span className="text-white/30 font-normal text-base">({scores.length}/5)</span>
@@ -164,7 +171,6 @@ export default function ScoresPage() {
           )}
         </div>
 
-        {/* Draw entry info */}
         <div className="mt-6 rounded-xl border border-[#b8f57a]/10 bg-[#b8f57a]/5 p-5">
           <p className="text-[#b8f57a] text-sm font-semibold mb-1">🎲 Your draw entries</p>
           <p className="text-white/40 text-sm">

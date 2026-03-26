@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { supabase } from '@/lib/supabaseClient'
-import { getUserProfile } from '@/lib/supabaseClient'
 import { getCharities, updateUserCharity, calculateCharityContribution } from '@/lib/charityLogic'
 import { PLAN_DETAILS } from '@/lib/subscriptionLogic'
 import { formatCurrency } from '@/lib/utils'
@@ -20,32 +19,47 @@ export default function CharityPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    let mounted = true
     const init = async () => {
-      const { data: { user: u } } = await supabase.auth.getUser()
-      if (!u) { router.push('/login'); return }
-      const prof = await getUserProfile(u.id)
-      if (!prof) { router.push('/login'); return }
+      const { data: { user: u }, error: userError } = await supabase.auth.getUser()
+      if (!mounted) return
+      if (userError || !u) { router.push('/login'); return }
+
+      const { data: prof } = await supabase
+        .from('users')
+        .select('*, charities(*)')
+        .eq('id', u.id)
+        .single()
+
+      if (!mounted) return
       setUser(u)
-      setProfile(prof)
-      setSelected(prof.charity_id ?? '')
-      setPercentage(prof.charity_percentage ?? 10)
+      setProfile(prof ?? null)
+      setSelected(prof?.charity_id ?? '')
+      setPercentage(prof?.charity_percentage ?? 10)
+
       const c = await getCharities()
+      if (!mounted) return
       setCharities(c)
       setLoading(false)
     }
     init()
-  }, [])
+    return () => { mounted = false }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSave = async () => {
     setSaving(true)
     setSuccess('')
     try {
       await updateUserCharity(user.id, selected, percentage)
-      const prof = await getUserProfile(user.id)
+      const { data: prof } = await supabase
+        .from('users')
+        .select('*, charities(*)')
+        .eq('id', user.id)
+        .single()
       setProfile(prof)
       setSuccess('Charity preferences saved!')
     } catch (err) {
-      // handle
+      console.error(err)
     }
     setSaving(false)
   }
@@ -70,7 +84,6 @@ export default function CharityPage() {
           Choose a charity to support and set how much of your subscription goes to them.
         </p>
 
-        {/* Contribution preview */}
         <div className="rounded-2xl border border-[#7af5c8]/20 bg-[#7af5c8]/5 p-6 mb-8">
           <p className="text-[#7af5c8] text-xs font-display uppercase tracking-wider mb-2">Your monthly impact</p>
           <p className="font-display text-4xl font-bold text-white mb-1">
@@ -82,7 +95,6 @@ export default function CharityPage() {
           </p>
         </div>
 
-        {/* Charity selection */}
         <div className="card mb-6">
           <h2 className="font-display font-bold text-lg mb-5">Choose a charity</h2>
           <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
@@ -111,7 +123,6 @@ export default function CharityPage() {
           </div>
         </div>
 
-        {/* Percentage slider */}
         <div className="card mb-6">
           <h2 className="font-display font-bold text-lg mb-2">Contribution amount</h2>
           <p className="text-white/40 text-sm mb-5">Minimum 10%. Increase to give more.</p>
